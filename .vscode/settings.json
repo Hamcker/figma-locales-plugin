@@ -1,0 +1,12 @@
+{
+    "emmet.includeLanguages": {
+        "html": "html"
+    },
+    "emmet.triggerExpansionOnTab": true,
+    "emme.showSuggestionsAsSnippets": true,
+    "editor.quickSuggestions": {
+        "other": "on",
+        "comments": "on",
+        "strings": "on"
+    }
+}

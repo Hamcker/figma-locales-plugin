@@ -1,0 +1,19 @@
+{
+  "name": "Locales",
+  "id": "1418914454477314773",
+  "api": "1.0.0",
+  "main": "dist/code.js",
+  "capabilities": [],
+  "enableProposedApi": false,
+  "documentAccess": "dynamic-page",
+  "editorType": [
+    "figma"
+  ],
+  "ui": "./public/index.html",
+  "networkAccess": {
+    "allowedDomains": [
+      "https://b1-de.anywork.gmbh",
+      "https://cdn.tailwindcss.com"
+    ]
+  }
+}
