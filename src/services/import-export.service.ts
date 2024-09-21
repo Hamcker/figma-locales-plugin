@@ -1,8 +1,11 @@
 import { RestClient } from './rest-client.service';
-import { localeFilterExpression, LOCALES_COLLECTION_NAME, URLS } from '../constants';
+import { localeFilterExpression, LOCALES_COLLECTION_NAME, URLS, variableFilterExpression } from '../constants';
 import { GetLocalesResponse, Language, ServiceResponse } from '../types';
+import { catchError, filter, finalize, firstValueFrom, from, map, mergeMap, Observable, of, tap, toArray } from 'rxjs';
 
 export class ImportExportService {
+   modes: Record<string, string> = {};
+
    constructor(private restClient: RestClient) {}
 
    private static instance(): ImportExportService {
@@ -12,7 +15,7 @@ export class ImportExportService {
 
    static async handleImportMessage() {
       const importExportService = ImportExportService.instance();
-      
+
       //! IMPORTANT:
       // Please keep this order and do not use for loop. It's very important to keep en-US at the beginning since the figma doesn't let
       // to define a variable without a mode. So, the first mode should be en-US. and en-US is actually the Mode 1 which has been renamed to en-US.
@@ -22,11 +25,34 @@ export class ImportExportService {
       await importExportService.importLocale(Language.TR_TR);
       await importExportService.importLocale(Language.DE_DE);
       await importExportService.importLocale(Language.AR_SA);
-      
    }
 
    static async handleExportMessage() {
-      // not implemented
+      const service = ImportExportService.instance();
+      const collection = await service.getLocalesCollection();
+      const newVariables = (await service.getNewlyAddedVariables(collection)).filter(variableFilterExpression);
+
+      if (newVariables.length === 0) {
+         figma.notify('No new variables found to export. Consider adding new variables with Mod_ or Com_ prefix.');
+         console.log('handleExportMessage()', { newVariables });
+
+         return;
+      }
+
+      service.modes = Object.fromEntries(collection.modes.map((x) => [x.modeId, x.name]));
+
+      from(newVariables)
+         .pipe(
+            mergeMap((variable) => of(variable).pipe(service.addOrUpdateLocale()), 5),
+            mergeMap(() => from(service.clearCache())),
+            catchError((error) => {
+               figma.notify('An error occurred while exporting locales.', { error: true });
+               console.error('An error occurred while exporting locales.', error);
+               return of(error);
+            }),
+            finalize(() => figma.notify('Export completed.'))
+         )
+         .subscribe();
    }
 
    async importLocale(language: Language) {
@@ -122,7 +148,6 @@ export class ImportExportService {
       }
 
       console.log('createOrUpdateVariables()', { collection, resources, language, mode });
-      
 
       const variables = await this.getVariablesByCollectionId(collection.id);
       if (!variables) {
@@ -146,6 +171,7 @@ export class ImportExportService {
                const variable = figma.variables.createVariable(normalizeResourceKey, collection, 'STRING');
 
                variable.setValueForMode(mode.modeId, resource.translation);
+               variable.setPluginData('AnyWork_defined', 'true');
             } catch (error) {
                console.error('An error occurred while creating variable.', { resource, error });
             }
@@ -163,5 +189,46 @@ export class ImportExportService {
 
    private normalizeResourceKey(resourceKey: string) {
       return resourceKey.replace(/\./gim, '_');
+   }
+
+   private async getNewlyAddedVariables(collection: VariableCollection) {
+      const newVariables = (await this.getVariablesByCollectionId(collection.id)).filter(
+         (x) => x.getPluginData('AnyWork_defined') !== 'true'
+      );
+      console.log('getNewlyAddedVariables()', { newVariables });
+      return newVariables;
+   }
+
+   private addOrUpdateLocale() {
+      return (source: Observable<Variable>) =>
+         source.pipe(
+            mergeMap((variable) =>
+               from(Object.entries(variable.valuesByMode).map(([modeId, translation]) => ({ modeId, translation, variable })))
+            ),
+            filter(({ variable, modeId }) => !variable.getPluginData(`AnyWork_defined_${modeId}`)),
+            mergeMap(({ variable, modeId, translation }) => {
+               console.log('===', { variable, modeId, modeName: this.modes[modeId], translation });
+               
+               return from(
+                  this.restClient.post(URLS.updateLocale(), {
+                     resourceKey: variable.name,
+                     languageCultureCode: this.modes[modeId],
+                     translation: translation,
+                  })
+               ).pipe(
+                  mergeMap((response) => from(response.json() as Promise<ServiceResponse<GetLocalesResponse[]>>)),
+                  map(({ type }) => ({ type, modeId, translation, variable }))
+               );
+            }),
+            tap(({ type, modeId, variable }) => {
+               if (type === 'Ok') {
+                  variable.setPluginData(`AnyWork_defined_${modeId}`, 'true');
+               }
+            })
+         );
+   }
+
+   private async clearCache() {
+      return this.restClient.post(URLS.clearCache(), {});
    }
 }
