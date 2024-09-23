@@ -23,8 +23,8 @@ export class ImportExportService {
       //! Since the license doesn't let to define more than 4 modes, we can't add more languages!
       await importExportService.importLocale(Language.EN_US);
       await importExportService.importLocale(Language.TR_TR);
-      await importExportService.importLocale(Language.DE_DE);
-      await importExportService.importLocale(Language.AR_SA);
+      // await importExportService.importLocale(Language.DE_DE);
+      // await importExportService.importLocale(Language.AR_SA);
    }
 
    static async handleExportMessage() {
